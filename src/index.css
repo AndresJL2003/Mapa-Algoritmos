@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+/* Estilos base globales */
+body {
+    background: #0a0a0f;
+    color: #e4e4e7;
+    width: 100vw;
+    min-height: 100vh;
+    overflow: hidden;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+canvas {
+    min-height: 100vh;
+}
+
+#root {
+    height: 100%;
+}
+
+/* Estilos específicos de librerías externas */
+.mapboxgl-canvas {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.maplibregl-control-container {
+    display: none;
+}
+
+/* Estilos de MUI que no se pueden aplicar inline */
+.MuiSlider-root .MuiSlider-thumb,
+.MuiSlider-root .MuiSlider-track {
+    transition: none;
+}
+
+.Mui-disabled {
+    opacity: 0.4;
+}
+
+.MuiTextField-root {
+    border-radius: 10px;
+    width: 100%;
+}
+
+.MuiTextField-root .MuiOutlinedInput-notchedOutline {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.MuiTextField-root .MuiInputBase-input {
+    font-size: 14px;
+    padding-block: 10px;
+    font-family: 'Inter', sans-serif;
+}
+
+.MuiTextField-root .MuiButtonBase-root {
+    border-radius: 10px;
+}
+
+.MuiTypography-root {
+    font-family: 'Inter', sans-serif !important;
+}
+
+.MuiButton-root {
+    font-family: 'Inter', sans-serif !important;
+    text-transform: none !important;
+}
+
+.MuiMenuItem-root {
+    font-family: 'Inter', sans-serif !important;
+}
+
+.MuiInputLabel-root {
+    font-family: 'Inter', sans-serif !important;
+}
+
+.MuiAlert-root {
+    border-radius: 12px !important;
+    backdrop-filter: blur(12px);
+}
+
+/* Estilos específicos que requieren selectores anidados */
+.github-corner .octo-arm {
+    transform-origin: 130px 106px;
+}
