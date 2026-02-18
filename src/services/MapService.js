@@ -41,108 +41,46 @@ export function encontrarNodoCercanoEnGrafo(grafo, latitud, longitud) {
 }
 
 /**
- * Obtiene datos de la API Overpass de OSM y retorna el nodo más cercano a las coordenadas especificadas
- * @param {Number} latitud 
- * @param {Number} longitud 
- * @returns {Promise<NodoOSM>} 
+ * Obtiene el grafo del área y el nodo de calle más cercano al clic en UNA SOLA petición.
+ * El nodo cercano se busca localmente sobre los datos ya descargados.
+ * @param {Number} latitud
+ * @param {Number} longitud
+ * @param {Number} radio en kilómetros
+ * @returns {Promise<{grafo: Graph, nodo: NodoOSM, circulo: Number[][]}>}
  */
-export async function obtenerNodoCercano(latitud, longitud) {
-    try {
-        const circulo = createGeoJSONCircle([longitud, latitud], 0.1); // Reducido de 0.15 a 0.1 para mejor rendimiento
-        const cajaDelimitadora = obtenerCajaDelimitadoraDePoligono(circulo);
-        const respuesta = await fetchOverpassData(cajaDelimitadora);
-        
-        let datos;
-        try {
-            datos = await respuesta.json();
-        } catch (parseError) {
-            throw new Error("Error al procesar datos del servidor. Intenta en otra ubicación.");
-        }
+export async function obtenerGrafoYNodoCercano(latitud, longitud, radio) {
+    const circulo = createGeoJSONCircle([longitud, latitud], radio);
+    const cajaDelimitadora = obtenerCajaDelimitadoraDePoligono(circulo);
 
-        if (!datos.elements || datos.elements.length === 0) {
-            return null;
-        }
+    const datos = await fetchOverpassData(cajaDelimitadora);
 
-        let resultado;
-        for(const nodo of datos.elements) {
-            if(nodo.type !== "node") continue;
-            if(!resultado) {
-                resultado = nodo;
-                continue;
-            }
-            
-            const nuevaDistancia = Math.sqrt(Math.pow(nodo.lat - latitud, 2) + Math.pow(nodo.lon - longitud, 2));
-            const distanciaResultado = Math.sqrt(Math.pow(resultado.lat - latitud, 2) + Math.pow(resultado.lon - longitud, 2));
-
-            if(nuevaDistancia < distanciaResultado) {
-                resultado = nodo;
-            }
-        }
-
-        return resultado;
-    } catch (error) {
-        console.error("Error en obtenerNodoCercano:", error);
-        throw error;
+    if (!datos.elements || datos.elements.length === 0) {
+        throw new Error("No se encontraron calles en esta área. Intenta en otra ubicación.");
     }
-}
 
-/**
- * Obtiene datos del mapa y los convierte en estructura de grafo
- * @param {Array} cajaDelimitadora array con 2 objetos que tienen propiedades latitude y longitude 
- * @param {Number} idNodoInicio 
- * @returns {Promise<Graph>}
- */
-export async function obtenerGrafoMapa(cajaDelimitadora, idNodoInicio) {
-    try {
-        const respuesta = await fetchOverpassData(cajaDelimitadora);
-        
-        let datos;
-        try {
-            datos = await respuesta.json();
-        } catch (parseError) {
-            throw new Error("Error al procesar datos del servidor. Intenta en otra ubicación.");
+    const grafo = new Graph();
+    for(const elemento of datos.elements) {
+        if(elemento.type === "node") {
+            grafo.agregarNodo(elemento.id, elemento.lat, elemento.lon);
         }
-
-        if (!datos.elements || datos.elements.length === 0) {
-            throw new Error("No se encontraron calles en esta área. Intenta en otra ubicación.");
-        }
-
-        const elementos = datos.elements;
-        
-        const grafo = new Graph();
-        for(const elemento of elementos) {
-            if(elemento.type === "node") {
-                const nodo = grafo.agregarNodo(elemento.id, elemento.lat, elemento.lon);
-                
-                if(nodo.id === idNodoInicio) {
-                    grafo.nodoInicio = nodo;
-                }
-            }
-            else if(elemento.type === "way") {
-                if(!elemento.nodes || elemento.nodes.length < 2) continue;
-
-                for(let i = 0; i < elemento.nodes.length - 1; i++) {
-                    const nodo1 = grafo.obtenerNodo(elemento.nodes[i]);
-                    const nodo2 = grafo.obtenerNodo(elemento.nodes[i + 1]);
-
-                    if(!nodo1 || !nodo2) {
-                        continue;
-                    }
-
-                    nodo1.conectarA(nodo2);
-                }
+        else if(elemento.type === "way") {
+            if(!elemento.nodes || elemento.nodes.length < 2) continue;
+            for(let i = 0; i < elemento.nodes.length - 1; i++) {
+                const nodo1 = grafo.obtenerNodo(elemento.nodes[i]);
+                const nodo2 = grafo.obtenerNodo(elemento.nodes[i + 1]);
+                if(!nodo1 || !nodo2) continue;
+                nodo1.conectarA(nodo2);
             }
         }
-
-        if(!grafo.nodoInicio) {
-            throw new Error("No se encontró el nodo de inicio en el área.");
-        }
-
-        return grafo;
-    } catch (error) {
-        console.error("Error en obtenerGrafoMapa:", error);
-        throw error;
     }
+
+    const nodoCercano = encontrarNodoCercanoEnGrafo(grafo, latitud, longitud);
+    if (!nodoCercano) {
+        throw new Error("No se encontró ninguna calle cerca. Intenta hacer clic en una calle visible.");
+    }
+
+    grafo.nodoInicio = grafo.obtenerNodo(nodoCercano.id);
+    return { grafo, nodo: nodoCercano, circulo };
 }
 
 /**

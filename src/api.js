@@ -42,13 +42,9 @@ export async function fetchOverpassData(boundingBox, intentosRestantes = 2) {
     // Verificar caché
     const claveCaché = generarClaveCaché(boundingBox);
     const datosEnCaché = cache.get(claveCaché);
-    
+
     if (datosEnCaché && Date.now() - datosEnCaché.timestamp < CACHE_EXPIRATION) {
-        console.log("Usando datos en caché");
-        return new Response(JSON.stringify(datosEnCaché.data), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' }
-        });
+        return datosEnCaché.data;
     }
 
     const exclusion = highWayExclude.map(e => `[highway!="${e}"]`).join("");
@@ -98,12 +94,9 @@ export async function fetchOverpassData(boundingBox, intentosRestantes = 2) {
             throw new Error("El servidor no devolvió datos válidos. Intenta en otra ubicación.");
         }
 
-        // Guardar en caché
+        // Guardar en caché y retornar datos parseados directamente
         const datos = await respuesta.json();
-        cache.set(claveCaché, {
-            data: datos,
-            timestamp: Date.now()
-        });
+        cache.set(claveCaché, { data: datos, timestamp: Date.now() });
 
         // Limpiar caché antigua (mantener solo últimas 10 entradas)
         if (cache.size > 10) {
@@ -111,10 +104,7 @@ export async function fetchOverpassData(boundingBox, intentosRestantes = 2) {
             cache.delete(primeraClaveAntigua);
         }
 
-        return new Response(JSON.stringify(datos), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' }
-        });
+        return datos;
 
     } catch (error) {
         // Si es un error de timeout o red, reintentar con otro servidor

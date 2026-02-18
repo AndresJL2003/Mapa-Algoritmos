@@ -4,9 +4,8 @@ import maplibregl from "maplibre-gl";
 import { PolygonLayer, ScatterplotLayer } from "@deck.gl/layers";
 import { FlyToInterpolator } from "deck.gl";
 import { TripsLayer } from "@deck.gl/geo-layers";
-import { createGeoJSONCircle } from "../helpers";
 import { useEffect, useRef, useState } from "react";
-import { obtenerCajaDelimitadoraDePoligono, obtenerGrafoMapa, obtenerNodoCercano, encontrarNodoCercanoEnGrafo } from "../services/MapService";
+import { obtenerGrafoYNodoCercano, encontrarNodoCercanoEnGrafo } from "../services/MapService";
 import PathfindingState from "../models/PathfindingState";
 import Interface from "./Interface";
 import { INITIAL_COLORS, INITIAL_VIEW_STATE, MAP_STYLE } from "../config";
@@ -44,39 +43,30 @@ function Map() {
             }, 300);
 
             try {
-                // Obtener nodo más cercano desde la API
-                const nodo = await obtenerNodoCercano(e.coordinate[1], e.coordinate[0]);
-                if(!nodo) {
-                    ui.current.showSnack("No se encontró ninguna calle cerca. Intenta hacer clic en una calle visible.", "error");
-                    clearTimeout(manejadorCarga);
-                    setCargando(false);
-                    return;
-                }
+                // Una sola petición: descarga el grafo y encuentra el nodo cercano localmente
+                const { grafo, nodo, circulo } = await obtenerGrafoYNodoCercano(
+                    e.coordinate[1], e.coordinate[0], radio ?? configuracion.radio
+                );
 
                 setNodoInicio(nodo);
-                const circulo = createGeoJSONCircle([nodo.lon, nodo.lat], radio ?? configuracion.radio);
-                setRadioSeleccion([{ contour: circulo}]);
-                
-                // Obtener nodos dentro del radio
-                const grafo = await obtenerGrafoMapa(obtenerCajaDelimitadoraDePoligono(circulo), nodo.id);
+                setRadioSeleccion([{ contour: circulo }]);
                 estado.current.grafo = grafo;
                 clearTimeout(manejadorCarga);
                 setCargando(false);
                 ui.current.showSnack("Nodo inicial seleccionado. Ahora selecciona el nodo final dentro del área verde.", "success");
-                
+
             } catch (error) {
                 console.error("Error al cargar el nodo inicial:", error);
                 clearTimeout(manejadorCarga);
                 setCargando(false);
-                
-                // Mensajes de error más específicos
+
                 const mensaje = error.message || "Error al cargar el mapa. Intenta en otra ubicación.";
                 ui.current.showSnack(mensaje, "error");
-                
+
                 setNodoInicio(null);
                 setRadioSeleccion([]);
             }
-            
+
             return;
         }
 
