@@ -105,7 +105,7 @@ function Map() {
 
     // Iniciar nueva animación de pathfinding
     function iniciarPathfinding() {
-        limpiarRuta();
+        limpiarRuta(false);
         estado.current.start(configuracion.algoritmo);
         setIniciado(true);
     }
@@ -128,7 +128,7 @@ function Map() {
         }
     }
 
-    function limpiarRuta() {
+    function limpiarRuta(resetNodos = true) {
         setIniciado(false);
         setDatosViajes([]);
         setTiempo(0);
@@ -139,9 +139,11 @@ function Map() {
         nodoTraza.current = null;
         nodoTraza2.current = null;
         setAnimacionTerminada(false);
-        setNodoInicio(null);
-        setNodoFin(null);
-        setRadioSeleccion([]);
+        if (resetNodos) {
+            setNodoInicio(null);
+            setNodoFin(null);
+            setRadioSeleccion([]);
+        }
     }
 
     // Añadir nuevo nodo a la propiedad puntosRuta e incrementar temporizador
@@ -197,22 +199,29 @@ function Map() {
         const velocidad = configuracion?.velocidad || 5;
         
         function animar(nuevoTiempo) {
-            // Ejecutar pasos del algoritmo
-            for(let i = 0; i < velocidad; i++) {
-                const nodosActualizados = estado.current.nextStep();
-                for(const nodoActualizado of nodosActualizados) {
-                    actualizarPuntosRuta(nodoActualizado, nodoActualizado.referente);
-                }
-
-                // Encontró el final pero esperando que termine la animación
-                if(estado.current.finished && !animacionTerminada) {
-                    if(!nodoTraza.current) nodoTraza.current = estado.current.nodoFin;
-                    const nodoPadre = nodoTraza.current.padre;
-                    actualizarPuntosRuta(nodoPadre, nodoTraza.current, "route", Math.max(Math.log2(velocidad), 1));
-                    nodoTraza.current = nodoPadre ?? nodoTraza.current;
-                    if(nodoPadre == null) {
-                        setAnimacionTerminada(true);
+            // Ejecutar pasos del algoritmo (descubrimiento de caminos)
+            if (!estado.current.finished) {
+                for(let i = 0; i < velocidad; i++) {
+                    const nodosActualizados = estado.current.nextStep();
+                    for(const nodoActualizado of nodosActualizados) {
+                        actualizarPuntosRuta(nodoActualizado, nodoActualizado.referente);
                     }
+                    if (estado.current.finished) break;
+                }
+            }
+
+            // Trazar camino más corto: un paso por frame, fuera del bucle de velocidad
+            if(estado.current.finished && !animacionTerminada) {
+                if(!nodoTraza.current) nodoTraza.current = estado.current.nodoFin;
+                const nodoPadre = nodoTraza.current.padre;
+                if(nodoPadre !== null) {
+                    actualizarPuntosRuta(nodoPadre, nodoTraza.current, "route", Math.max(Math.log2(velocidad), 1));
+                    nodoTraza.current = nodoPadre;
+                } else {
+                    // Sincronizar tiempo con el final del temporizador para que todos
+                    // los segmentos (descubrimiento + ruta) sean visibles de inmediato
+                    setTiempo(temporizador.current);
+                    setAnimacionTerminada(true);
                 }
             }
 

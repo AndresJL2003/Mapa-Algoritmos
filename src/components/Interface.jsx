@@ -72,7 +72,7 @@ const Interface = forwardRef(({ canStart, started, animationEnded, playbackOn, t
         }
         else if(e.code === "ArrowLeft" && animationEnded && leftDown.current) {
             leftDown.current = false;
-            toggleAnimation(false, 1);
+            toggleAnimation(false, -1);
         }
         else if(e.code === "KeyR" && (animationEnded || !started)) clearPath();
     };
