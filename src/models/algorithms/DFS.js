@@ -10,6 +10,7 @@ class DFS extends PathfindingAlgorithm {
         super.start(nodoInicio, nodoFin);
         this.pila = [nodoInicio];
         nodoInicio.distanciaDesdeInicio = 0;
+        nodoInicio.encolado = true;
     }
 
     nextStep() {
@@ -21,12 +22,16 @@ class DFS extends PathfindingAlgorithm {
         const nodosActualizados = [];
         const nodoActual = this.pila.pop(); // LIFO - Last In First Out
         
+        // Si ya fue visitado, saltar sin recursión
         if(nodoActual.visitado) {
-            return this.nextStep();
+            return [];
         }
         
         nodoActual.visitado = true;
-        const aristaRef = nodoActual.aristas.find(a => a.obtenerOtroNodo(nodoActual) === nodoActual.referente);
+        
+        const aristaRef = nodoActual.aristas.find(a => 
+            a.obtenerOtroNodo(nodoActual) === nodoActual.referente
+        );
         if(aristaRef) aristaRef.visitado = true;
 
         // Encontró el nodo final
@@ -47,17 +52,22 @@ class DFS extends PathfindingAlgorithm {
                 nodosActualizados.push(vecino);
             }
 
-            if (vecino.visitado) continue;
+            if (vecino.visitado || vecino.encolado) continue;
 
-            if (!this.pila.includes(vecino)) {
-                this.pila.push(vecino);
-                vecino.distanciaDesdeInicio = nodoActual.distanciaDesdeInicio + 1;
-                vecino.padre = nodoActual;
-                vecino.referente = nodoActual;
-            }
+            // Marcar como encolado en O(1) en lugar de usar includes() O(n)
+            this.pila.push(vecino);
+            vecino.encolado = true;
+            vecino.distanciaDesdeInicio = nodoActual.distanciaDesdeInicio + 1;
+            vecino.padre = nodoActual;
+            vecino.referente = nodoActual;
+            
+            // Añadir vecino a nodos actualizados para animación
+            nodosActualizados.push(vecino);
         }
 
-        return [...nodosActualizados, nodoActual];
+        // Siempre incluir el nodo actual al final
+        nodosActualizados.push(nodoActual);
+        return nodosActualizados;
     }
 }
 

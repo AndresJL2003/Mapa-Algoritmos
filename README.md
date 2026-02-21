@@ -12,7 +12,7 @@ Aplicación web interactiva para visualizar algoritmos de búsqueda de caminos (
 
 1. Clonar el repositorio
 ```bash
-git clone https://github.com/jhonw2004/Mapa_Algoritmos.git
+git clone https://github.com/jhonw2004/Mapa_Algoritmos_AI.git
 cd Mapa_Algoritmos
 ```
 
@@ -48,7 +48,7 @@ npm run lint     # Ejecutar linter
 
 - React 18 + Vite
 - Deck.gl + MapLibre GL
-- Material-UI
+- Tailwindcss v4.2
 - OpenStreetMap (Overpass API)
 
 ## Licencia

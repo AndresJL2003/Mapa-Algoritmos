@@ -11,33 +11,22 @@ import Graph from "../models/Graph";
  */
 
 /**
- * Encuentra el nodo más cercano en un grafo ya cargado
+ * Encuentra el nodo más cercano en un grafo ya cargado usando índice espacial
  * @param {Graph} grafo 
  * @param {Number} latitud 
  * @param {Number} longitud 
  * @returns {Object} nodo más cercano con formato {id, lat, lon}
  */
 export function encontrarNodoCercanoEnGrafo(grafo, latitud, longitud) {
-    let nodoMasCercano = null;
-    let distanciaMinima = Infinity;
+    const nodo = grafo.encontrarNodoCercano(latitud, longitud);
+    
+    if (!nodo) return null;
 
-    for(const [id, nodo] of grafo.nodos) {
-        const distancia = Math.sqrt(
-            Math.pow(nodo.latitud - latitud, 2) + 
-            Math.pow(nodo.longitud - longitud, 2)
-        );
-
-        if(distancia < distanciaMinima) {
-            distanciaMinima = distancia;
-            nodoMasCercano = {
-                id: nodo.id,
-                lat: nodo.latitud,
-                lon: nodo.longitud
-            };
-        }
-    }
-
-    return nodoMasCercano;
+    return {
+        id: nodo.id,
+        lat: nodo.latitud,
+        lon: nodo.longitud
+    };
 }
 
 /**
@@ -58,17 +47,33 @@ export async function obtenerGrafoYNodoCercano(latitud, longitud, radio) {
         throw new Error("No se encontraron calles en esta área. Intenta en otra ubicación.");
     }
 
+    // Optimización: procesar en una sola pasada
     const grafo = new Graph();
+    const nodosMap = new Map();
+    const ways = [];
+
+    // Primera pasada: separar nodos y ways
     for(const elemento of datos.elements) {
         if(elemento.type === "node") {
-            grafo.agregarNodo(elemento.id, elemento.lat, elemento.lon);
+            nodosMap.set(elemento.id, elemento);
+        } else if(elemento.type === "way") {
+            if(elemento.nodes && elemento.nodes.length >= 2) {
+                ways.push(elemento);
+            }
         }
-        else if(elemento.type === "way") {
-            if(!elemento.nodes || elemento.nodes.length < 2) continue;
-            for(let i = 0; i < elemento.nodes.length - 1; i++) {
-                const nodo1 = grafo.obtenerNodo(elemento.nodes[i]);
-                const nodo2 = grafo.obtenerNodo(elemento.nodes[i + 1]);
-                if(!nodo1 || !nodo2) continue;
+    }
+
+    // Segunda pasada: crear nodos en el grafo
+    for(const [id, nodo] of nodosMap) {
+        grafo.agregarNodo(id, nodo.lat, nodo.lon);
+    }
+
+    // Tercera pasada: conectar nodos según ways
+    for(const way of ways) {
+        for(let i = 0; i < way.nodes.length - 1; i++) {
+            const nodo1 = grafo.obtenerNodo(way.nodes[i]);
+            const nodo2 = grafo.obtenerNodo(way.nodes[i + 1]);
+            if(nodo1 && nodo2) {
                 nodo1.conectarA(nodo2);
             }
         }

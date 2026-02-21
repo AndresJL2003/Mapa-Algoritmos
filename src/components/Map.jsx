@@ -139,8 +139,10 @@ function Map() {
     // Añadir nuevo nodo a la propiedad puntosRuta e incrementar temporizador
     function actualizarPuntosRuta(nodo, nodoReferente, color = "path", multiplicadorTiempo = 1) {
         if(!nodo || !nodoReferente) return;
-        const distancia = Math.hypot(nodo.longitud - nodoReferente.longitud, nodo.latitud - nodoReferente.latitud);
-        const tiempoAñadido = distancia * 50000 * multiplicadorTiempo;
+        
+        // Tiempo fijo por segmento para animación consistente
+        const tiempoBase = 100; // 100ms por segmento base
+        const tiempoAñadido = tiempoBase * multiplicadorTiempo;
 
         puntosRuta.current = [...puntosRuta.current,
             { 
@@ -189,39 +191,37 @@ function Map() {
         const velocidad = configuracion?.velocidad || 5;
         
         function animar(nuevoTiempo) {
-            // Ejecutar pasos del algoritmo (descubrimiento de caminos)
+            // Ejecutar UN SOLO paso del algoritmo por frame para animación consistente
             if (!estado.current.finished) {
-                for(let i = 0; i < velocidad; i++) {
-                    const nodosActualizados = estado.current.nextStep();
-                    for(const nodoActualizado of nodosActualizados) {
-                        actualizarPuntosRuta(nodoActualizado, nodoActualizado.referente);
-                    }
-                    if (estado.current.finished) break;
+                const nodosActualizados = estado.current.nextStep();
+                
+                // Añadir todos los nodos actualizados a la ruta
+                for(const nodoActualizado of nodosActualizados) {
+                    actualizarPuntosRuta(nodoActualizado, nodoActualizado.referente);
+                }
+                
+                // Actualizar el tiempo de animación de forma constante
+                // Incremento fijo basado en la velocidad configurada
+                if(nodosActualizados.length > 0) {
+                    setTiempo(temporizador.current);
                 }
             }
 
-            // Trazar camino más corto: un paso por frame, fuera del bucle de velocidad
+            // Trazar camino más corto: un paso por frame
             if(estado.current.finished && !animacionTerminada) {
                 if(!nodoTraza.current) nodoTraza.current = estado.current.nodoFin;
                 const nodoPadre = nodoTraza.current.padre;
                 if(nodoPadre !== null) {
-                    actualizarPuntosRuta(nodoPadre, nodoTraza.current, "route", Math.max(Math.log2(velocidad), 1));
+                    actualizarPuntosRuta(nodoPadre, nodoTraza.current, "route", 1);
                     nodoTraza.current = nodoPadre;
+                    setTiempo(temporizador.current);
                 } else {
-                    // Sincronizar tiempo con el final del temporizador para que todos
-                    // los segmentos (descubrimiento + ruta) sean visibles de inmediato
                     setTiempo(temporizador.current);
                     setAnimacionTerminada(true);
                 }
             }
 
-            // Progreso de animación
-            if (refTiempoAnterior.current != null && !animacionTerminada) {
-                const deltaTiempo = nuevoTiempo - refTiempoAnterior.current;
-                setTiempo(t => t + deltaTiempo * direccionReproduccion);
-            }
-
-            // Progreso de reproducción
+            // Progreso de reproducción (cuando ya terminó)
             if(refTiempoAnterior.current != null && animacionTerminada && reproduccionActiva) {
                 const deltaTiempo = nuevoTiempo - refTiempoAnterior.current;
                 if(direccionReproduccion !== -1) {
@@ -236,7 +236,12 @@ function Map() {
             }
 
             refTiempoAnterior.current = nuevoTiempo;
-            animacionId = requestAnimationFrame(animar);
+            
+            // Controlar la velocidad de animación con delay
+            const delay = Math.max(16, 1000 / (velocidad * 2)); // Mínimo 16ms (60fps)
+            setTimeout(() => {
+                animacionId = requestAnimationFrame(animar);
+            }, delay);
         }
         
         animacionId = requestAnimationFrame(animar);

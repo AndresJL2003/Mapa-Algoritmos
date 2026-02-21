@@ -1,39 +1,50 @@
 import PathfindingAlgorithm from "./PathfindingAlgorithm";
+import MinHeap from "../../utils/MinHeap";
 
 class AStar extends PathfindingAlgorithm {
     constructor() {
         super();
-        this.listaAbierta = [];
-        this.listaCerrada = [];
+        this.listaAbierta = null;
+        this.listaCerrada = new Set();
     }
 
     start(nodoInicio, nodoFin) {
         super.start(nodoInicio, nodoFin);
-        this.listaAbierta = [this.nodoInicio];
-        this.listaCerrada = [];
+        
+        // Usar MinHeap para obtener el nodo con menor f en O(log n)
+        this.listaAbierta = new MinHeap((a, b) => 
+            a.distanciaTotal - b.distanciaTotal
+        );
+        
+        this.listaCerrada.clear();
         this.nodoInicio.distanciaDesdeInicio = 0;
-        this.nodoInicio.distanciaAlFinal = 0;
+        this.nodoInicio.distanciaAlFinal = Math.hypot(
+            this.nodoInicio.longitud - this.nodoFin.longitud,
+            this.nodoInicio.latitud - this.nodoFin.latitud
+        );
+        this.nodoInicio.enHeap = true;
+        this.listaAbierta.push(this.nodoInicio);
     }
 
     nextStep() {
-        if(this.listaAbierta.length === 0) {
+        if(this.listaAbierta.isEmpty()) {
             this.finished = true;
             return [];
         }
 
         const nodosActualizados = [];
-        const nodoActual = this.listaAbierta.reduce((acc, actual) => 
-            actual.distanciaTotal < acc.distanciaTotal ? actual : acc, 
-            this.listaAbierta[0]
-        );
-        this.listaAbierta.splice(this.listaAbierta.indexOf(nodoActual), 1);
+        const nodoActual = this.listaAbierta.pop();
+        nodoActual.enHeap = false;
         nodoActual.visitado = true;
-        const aristaRef = nodoActual.aristas.find(a => a.obtenerOtroNodo(nodoActual) === nodoActual.referente);
+        
+        const aristaRef = nodoActual.aristas.find(a => 
+            a.obtenerOtroNodo(nodoActual) === nodoActual.referente
+        );
         if(aristaRef) aristaRef.visitado = true;
 
         // Encontró el nodo final
         if(nodoActual.id === this.nodoFin.id) {
-            this.listaAbierta = [];
+            this.listaAbierta.clear();
             this.finished = true;
             return [nodoActual];
         }
@@ -41,9 +52,7 @@ class AStar extends PathfindingAlgorithm {
         for(const v of nodoActual.vecinos) {
             const vecino = v.nodo;
             const arista = v.arista;
-            const costoActualVecino = nodoActual.distanciaDesdeInicio + 
-                Math.hypot(vecino.longitud - nodoActual.longitud, vecino.latitud - nodoActual.latitud);
-
+            
             // Llenar aristas que no están marcadas en el mapa
             if(vecino.visitado && !arista.visitado) {
                 arista.visitado = true;
@@ -51,30 +60,44 @@ class AStar extends PathfindingAlgorithm {
                 nodosActualizados.push(vecino);
             }
 
-            if(this.listaAbierta.includes(vecino)) {
-                if(vecino.distanciaDesdeInicio <= costoActualVecino) continue;
+            // Saltar nodos ya procesados
+            if(this.listaCerrada.has(vecino)) continue;
+
+            const costoActualVecino = nodoActual.distanciaDesdeInicio + 
+                Math.hypot(
+                    vecino.longitud - nodoActual.longitud, 
+                    vecino.latitud - nodoActual.latitud
+                );
+
+            // Si el vecino ya está en la lista abierta con mejor costo, saltar
+            if(vecino.enHeap && vecino.distanciaDesdeInicio <= costoActualVecino) {
+                continue;
             }
-            else if(this.listaCerrada.includes(vecino)) {
-                if(vecino.distanciaDesdeInicio <= costoActualVecino) continue;
-                this.listaCerrada.splice(this.listaCerrada.indexOf(vecino), 1);
-                this.listaAbierta.push(vecino);
-            }
-            else {
-                this.listaAbierta.push(vecino);
+
+            // Actualizar o añadir vecino
+            vecino.distanciaDesdeInicio = costoActualVecino;
+            
+            if(!vecino.enHeap) {
                 vecino.distanciaAlFinal = Math.hypot(
                     vecino.longitud - this.nodoFin.longitud, 
                     vecino.latitud - this.nodoFin.latitud
                 );
+                vecino.enHeap = true;
+                this.listaAbierta.push(vecino);
+                
+                // Añadir vecino a nodos actualizados para animación
+                nodosActualizados.push(vecino);
             }
 
-            vecino.distanciaDesdeInicio = costoActualVecino;
             vecino.referente = nodoActual;
             vecino.padre = nodoActual;
         }
 
-        this.listaCerrada.push(nodoActual);
+        this.listaCerrada.add(nodoActual);
 
-        return [...nodosActualizados, nodoActual];
+        // Siempre incluir el nodo actual al final
+        nodosActualizados.push(nodoActual);
+        return nodosActualizados;
     }
 }
 

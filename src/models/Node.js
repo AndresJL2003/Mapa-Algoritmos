@@ -52,6 +52,8 @@ export default class Node {
      */
     reset() {
         this.visitado = false;
+        this.encolado = false;
+        this.enHeap = false;
         this.distanciaDesdeInicio = 0;
         this.distanciaAlFinal = 0;
         this.padre = null;
