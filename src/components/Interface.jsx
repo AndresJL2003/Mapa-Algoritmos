@@ -1,6 +1,6 @@
 import { Button, IconButton, Typography, Snackbar, Alert, CircularProgress, Fade, Tooltip, Drawer, MenuItem, Select, InputLabel, FormControl, Menu } from "@mui/material";
 import { MuiColorInput } from "mui-color-input";
-import { PlayArrow, Settings, Movie, Pause, Replay } from "@mui/icons-material";
+import { PlayArrow, Settings, Pause, Replay } from "@mui/icons-material";
 import Slider from "./Slider";
 import { useState, useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import { INITIAL_COLORS, LOCATIONS } from "../config";
@@ -89,11 +89,29 @@ const Interface = forwardRef(({ canStart, started, animationEnded, playbackOn, t
     return (
         <>
             <div className={`fixed left-0 top-6 right-0 flex justify-center items-center gap-6 pointer-events-none transition-all duration-500 ease-out ${cinematic ? "-translate-y-[200%] opacity-0" : ""} max-[991px]:flex-wrap-reverse max-[991px]:top-[5px] max-[991px]:text-sm max-[991px]:gap-y-2.5 max-[991px]:gap-x-5`}>
-                <div className="w-64 pointer-events-auto flex flex-col bg-[#18181b]/90 backdrop-blur-xl rounded-2xl px-6 py-4 shadow-2xl border border-white/5 max-[991px]:w-auto max-[991px]:basis-full max-[991px]:max-w-[280px] max-[560px]:max-w-[360px]">
-                    <Typography id="playback-slider" gutterBottom className="max-[991px]:mb-0.5 text-sm font-medium text-zinc-300">
-                        Reproducción
-                    </Typography>
-                    <Slider disabled={!animationEnded}  value={animationEnded ? time : maxTime} min={animationEnded ? 0 : -1} max={maxTime} onChange={(e) => {timeChanged(Number(e.target.value));}} className="max-[991px]:max-w-[280px] max-[991px]:py-[5px]" aria-labelledby="playback-slider" />
+                <div className="pointer-events-auto flex gap-2 bg-[#18181b]/90 backdrop-blur-xl rounded-2xl px-4 py-3 shadow-2xl border border-white/5">
+                    {[0.5, 1, 2, 5, 10].map(speed => (
+                        <Button
+                            key={speed}
+                            onClick={() => setSettings({...settings, velocidad: speed})}
+                            variant="contained"
+                            style={{
+                                backgroundColor: settings.velocidad === speed ? "#10b981" : "#27272a",
+                                color: "#e4e4e7",
+                                minWidth: "50px",
+                                paddingBlock: 8,
+                                paddingInline: 12,
+                                borderRadius: 10,
+                                fontSize: 13,
+                                fontWeight: 500,
+                                border: settings.velocidad === speed ? "1px solid #10b981" : "1px solid rgba(255, 255, 255, 0.08)",
+                                boxShadow: settings.velocidad === speed ? "0 4px 12px rgba(16, 185, 129, 0.25)" : "none"
+                            }}
+                            className="hover:bg-[#3f3f46] transition-all"
+                        >
+                            {speed}x
+                        </Button>
+                    ))}
                 </div>
                 <IconButton disabled={!canStart} onClick={handlePlay} style={{ backgroundColor: "#10b981", width: 60, height: 60, boxShadow: "0 8px 24px 0 rgba(16, 185, 129, 0.35)" }} size="large" className="pointer-events-auto hover:scale-105 transition-all">
                     {(!started || animationEnded && !playbackOn) 
@@ -110,11 +128,6 @@ const Interface = forwardRef(({ canStart, started, animationEnded, playbackOn, t
                 <Tooltip title="Configuración">
                     <IconButton onClick={() => {setSidebar(true);}} style={{ backgroundColor: "#18181b", width: 48, height: 48, boxShadow: "0 4px 12px rgba(0,0,0,0.4)", border: "1px solid rgba(255, 255, 255, 0.08)" }} size="large" className="hover:bg-[#27272a] transition-colors">
                         <Settings style={{ color: "#e4e4e7", width: 22, height: 22 }} fontSize="inherit" />
-                    </IconButton>
-                </Tooltip>
-                <Tooltip title="Modo cinemático">
-                    <IconButton className="btn-cinematic max-[991px]:[@media(hover:none)_and_(pointer:coarse)]:hidden hover:bg-[#27272a] transition-colors" onClick={() => {setCinematic(!cinematic);}} style={{ backgroundColor: "#18181b", width: 48, height: 48, boxShadow: "0 4px 12px rgba(0,0,0,0.4)", border: "1px solid rgba(255, 255, 255, 0.08)" }} size="large">
-                        <Movie style={{ color: "#e4e4e7", width: 22, height: 22 }} fontSize="inherit" />
                     </IconButton>
                 </Tooltip>
             </div>
@@ -246,13 +259,6 @@ const Interface = forwardRef(({ canStart, started, animationEnded, playbackOn, t
                                 }
                             ]} 
                         />
-                    </div>
-
-                    <div className="w-full pointer-events-auto flex flex-col">
-                        <Typography id="speed-slider" className="text-sm font-medium mb-2 text-zinc-300">
-                            Velocidad de animación
-                        </Typography>
-                        <Slider min={1} max={30} value={settings.velocidad} onChange={e => { setSettings({...settings, velocidad: Number(e.target.value)}); }} aria-labelledby="speed-slider" style={{ marginBottom: 4 }} />
                     </div>
 
                     <div className="flex flex-col gap-4">

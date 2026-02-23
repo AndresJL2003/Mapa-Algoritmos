@@ -1,4 +1,10 @@
-const highWayExclude = ["footway", "street_lamp", "steps", "pedestrian", "track", "path"];
+/* global AggregateError */
+
+const highWayExclude = [
+    "footway", "street_lamp", "steps", "pedestrian",
+    "track", "path", "cycleway", "bridleway",
+    "construction", "proposed", "platform", "elevator"
+];
 
 // Servidores alternativos de Overpass API para balanceo de carga
 const OVERPASS_SERVERS = [
@@ -7,15 +13,13 @@ const OVERPASS_SERVERS = [
     "https://overpass.openstreetmap.ru/api/interpreter"
 ];
 
-let servidorActual = 0;
-
 // Caché simple para reducir llamadas repetidas
 const cache = new Map();
 const CACHE_EXPIRATION = 5 * 60 * 1000; // 5 minutos
 
 /**
  * Genera una clave de caché basada en la caja delimitadora
- * @param {Array} boundingBox 
+ * @param {Array} boundingBox
  * @returns {string}
  */
 function generarClaveCaché(boundingBox) {
@@ -23,97 +27,108 @@ function generarClaveCaché(boundingBox) {
 }
 
 /**
- * Obtiene el siguiente servidor de Overpass API en rotación
- * @returns {string}
+ * Realiza la petición HTTP a un servidor Overpass y parsea la respuesta
+ * @param {string} url
+ * @param {string} query
+ * @param {AbortSignal} signal
+ * @returns {Promise<Object>}
  */
-function obtenerSiguienteServidor() {
-    const servidor = OVERPASS_SERVERS[servidorActual];
-    servidorActual = (servidorActual + 1) % OVERPASS_SERVERS.length;
-    return servidor;
+async function fetchDeServidor(url, query, signal) {
+    const resp = await fetch(url, {
+        method: "POST",
+        body: query,
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        signal
+    });
+
+    if (resp.status === 429 || resp.status === 504) throw new Error("sobrecargado");
+    if (!resp.ok) throw new Error(`Error del servidor: ${resp.status} ${resp.statusText}`);
+
+    const contentType = resp.headers.get("content-type");
+    if (!contentType?.includes("application/json")) {
+        throw new Error("El servidor no devolvió datos válidos. Intenta en otra ubicación.");
+    }
+
+    return resp.json();
 }
 
 /**
- * Realiza petición a la API de Overpass con reintentos y manejo de errores
+ * Lanza una petición escalonada: espera `i * 4s` antes de iniciar,
+ * permitiendo que el servidor anterior tenga prioridad.
+ * @param {string} url
+ * @param {number} i índice del servidor (0 = sin espera)
+ * @param {string} query
+ * @param {AbortController[]} controllers
+ * @returns {Promise<Object>}
+ */
+async function peticionEscalonada(url, i, query, controllers) {
+    if (i > 0) await new Promise(r => setTimeout(r, i * 4000));
+    if (controllers[i].signal.aborted) throw new Error("cancelado");
+
+    const timeoutId = setTimeout(() => controllers[i].abort(), 20000);
+    try {
+        const datos = await fetchDeServidor(url, query, controllers[i].signal);
+        clearTimeout(timeoutId);
+        return datos;
+    } catch (e) {
+        clearTimeout(timeoutId);
+        throw e;
+    }
+}
+
+/**
+ * Realiza petición a la API de Overpass con hedged requests:
+ * arranca el servidor 2 si el servidor 1 tarda más de 4s,
+ * y el servidor 3 si ambos tardan más de 8s. Usa el primero que responda.
  * @param {Array} boundingBox array con 2 objetos que tienen propiedades latitude y longitude
  * @param {number} intentosRestantes número de reintentos permitidos
- * @returns {Promise<Response>}
+ * @returns {Promise<Object>}
  */
 export async function fetchOverpassData(boundingBox, intentosRestantes = 2) {
     // Verificar caché
     const claveCaché = generarClaveCaché(boundingBox);
     const datosEnCaché = cache.get(claveCaché);
-
     if (datosEnCaché && Date.now() - datosEnCaché.timestamp < CACHE_EXPIRATION) {
         return datosEnCaché.data;
     }
 
     const exclusion = highWayExclude.map(e => `[highway!="${e}"]`).join("");
-    const query = `
-    [out:json][timeout:25];(
-        way[highway]${exclusion}[footway!="*"]
-        (${boundingBox[0].latitude},${boundingBox[0].longitude},${boundingBox[1].latitude},${boundingBox[1].longitude});
-        node(w);
-    );
-    out skel;`;
+    const bbox = `${boundingBox[0].latitude},${boundingBox[0].longitude},${boundingBox[1].latitude},${boundingBox[1].longitude}`;
+    // out skel qt: formato mínimo + ordenamiento quad-tile (más rápido de procesar)
+    const query = `[out:json][timeout:25];(way[highway]${exclusion}(${bbox});node(w););out skel qt;`;
 
-    const servidor = obtenerSiguienteServidor();
+    // Un AbortController por servidor para cancelar los perdedores
+    const controllers = OVERPASS_SERVERS.map(() => new AbortController());
+
+    // Hedged requests: servidor i arranca después de i*4 segundos
+    // Si el servidor 0 responde en 3s, los servidores 1 y 2 nunca se usan
+    // Si el servidor 0 tarda 5s, el servidor 1 ya arrancó al segundo 4
+    const promesas = OVERPASS_SERVERS.map((url, i) => peticionEscalonada(url, i, query, controllers));
 
     try {
-        // Crear AbortController para timeout manual
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        const datos = await Promise.any(promesas);
 
-        const respuesta = await fetch(servidor, {
-            method: "POST",
-            body: query,
-            headers: {
-                "Content-Type": "application/x-www-form-urlencoded"
-            },
-            signal: controller.signal
-        });
+        // Cancelar los requests que aún están en vuelo
+        controllers.forEach(c => c.abort());
 
-        clearTimeout(timeoutId);
-
-        // Si el servidor responde con error 429 (Too Many Requests) o 504 (Gateway Timeout)
-        if (respuesta.status === 429 || respuesta.status === 504) {
-            if (intentosRestantes > 0) {
-                console.warn(`Servidor ${servidor} sobrecargado (${respuesta.status}). Reintentando con otro servidor...`);
-                await new Promise(resolve => setTimeout(resolve, 1000)); // esperar 1 segundo
-                return fetchOverpassData(boundingBox, intentosRestantes - 1);
-            }
-            throw new Error(`Servidor de mapas sobrecargado. Por favor, intenta en unos segundos.`);
-        }
-
-        if (!respuesta.ok) {
-            throw new Error(`Error del servidor: ${respuesta.status} ${respuesta.statusText}`);
-        }
-
-        // Verificar que la respuesta sea JSON válido
-        const contentType = respuesta.headers.get("content-type");
-        if (!contentType || !contentType.includes("application/json")) {
-            throw new Error("El servidor no devolvió datos válidos. Intenta en otra ubicación.");
-        }
-
-        // Guardar en caché y retornar datos parseados directamente
-        const datos = await respuesta.json();
+        // Guardar en caché
         cache.set(claveCaché, { data: datos, timestamp: Date.now() });
-
-        // Limpiar caché antigua (mantener solo últimas 10 entradas)
-        if (cache.size > 10) {
-            const primeraClaveAntigua = cache.keys().next().value;
-            cache.delete(primeraClaveAntigua);
-        }
+        if (cache.size > 10) cache.delete(cache.keys().next().value);
 
         return datos;
 
     } catch (error) {
-        // Si es un error de timeout o red, reintentar con otro servidor
-        if ((error.name === "AbortError" || error.name === "TypeError") && intentosRestantes > 0) {
-            console.warn(`Error de conexión con ${servidor}. Reintentando con otro servidor...`);
-            await new Promise(resolve => setTimeout(resolve, 1000));
+        controllers.forEach(c => c.abort());
+
+        if (intentosRestantes > 0) {
+            console.warn("Todos los servidores fallaron. Reintentando...");
+            await new Promise(r => setTimeout(r, 500));
             return fetchOverpassData(boundingBox, intentosRestantes - 1);
         }
-        
+
+        if (error instanceof AggregateError) {
+            throw new Error("Servidor de mapas no disponible. Por favor, intenta en unos segundos.");
+        }
         throw error;
     }
 }

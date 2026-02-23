@@ -18,6 +18,7 @@ export const INITIAL_COLORS = {
 };
 
 export const LOCATIONS = [
+    { name: "Santa Cruz, Bolivia", latitude: -17.783, longitude: -63.182 },
     { name: "Nueva York", latitude: 40.712, longitude: -74.006 },
     { name: "Tokio", latitude: 35.682, longitude: 139.759 },
     { name: "París", latitude: 48.856, longitude: 2.352 },
@@ -36,6 +37,5 @@ export const LOCATIONS = [
     { name: "Shanghái", latitude: 31.230, longitude: 121.473 },
     { name: "Barcelona", latitude: 41.385, longitude: 2.173 },
     { name: "La Paz, Bolivia", latitude: -16.500, longitude: -68.150 },
-    { name: "Santa Cruz, Bolivia", latitude: -17.783, longitude: -63.182 },
     { name: "Cochabamba, Bolivia", latitude: -17.394, longitude: -66.157 }
 ];

@@ -22,6 +22,7 @@ function Map() {
     const [direccionReproduccion, setDireccionReproduccion] = useState(1);
     const [cinematico, setCinematico] = useState(false);
     const [cargando, setCargando] = useState(false);
+    const [cargandoNodoInicio, setCargandoNodoInicio] = useState(false);
     const [configuracion, setConfiguracion] = useState({ algoritmo: "astar", radio: 4, velocidad: 5 });
     const [colores, setColores] = useState(INITIAL_COLORS);
     const [estadoVista, setEstadoVista] = useState(INITIAL_VIEW_STATE);
@@ -35,9 +36,14 @@ function Map() {
 
     async function clicMapa(e, _info, radio = null) {
         if(iniciado && !animacionTerminada) return;
+        if(cargandoNodoInicio) return;
 
         // Si no hay nodo inicial, establecer el nodo inicial
         if(!nodoInicio) {
+            // Mostrar marcador inmediatamente en la posición clickeada
+            setNodoInicio({ lon: e.coordinate[0], lat: e.coordinate[1] });
+            setCargandoNodoInicio(true);
+
             const manejadorCarga = setTimeout(() => {
                 setCargando(true);
             }, 300);
@@ -49,6 +55,7 @@ function Map() {
                 );
 
                 setNodoInicio(nodo);
+                setCargandoNodoInicio(false);
                 setRadioSeleccion([{ contour: circulo }]);
                 estado.current.grafo = grafo;
                 clearTimeout(manejadorCarga);
@@ -59,12 +66,12 @@ function Map() {
                 console.error("Error al cargar el nodo inicial:", error);
                 clearTimeout(manejadorCarga);
                 setCargando(false);
+                setCargandoNodoInicio(false);
+                setNodoInicio(null);
+                setRadioSeleccion([]);
 
                 const mensaje = error.message || "Error al cargar el mapa. Intenta en otra ubicación.";
                 ui.current.showSnack(mensaje, "error");
-
-                setNodoInicio(null);
-                setRadioSeleccion([]);
             }
 
             return;
@@ -105,11 +112,16 @@ function Map() {
         if(tiempo === 0 && !animacionTerminada) return;
         setDireccionReproduccion(direccion);
         if(animacionTerminada) {
-            if(bucle && tiempo >= temporizador.current) {
+            // Si la animación terminó y está pausada, reiniciar y reproducir
+            if(!reproduccionActiva) {
                 setTiempo(0);
+                setReproduccionActiva(true);
+                setIniciado(true);
+                refTiempoAnterior.current = null;
+            } else {
+                // Si está reproduciéndose, pausar
+                setReproduccionActiva(false);
             }
-            setIniciado(true);
-            setReproduccionActiva(!reproduccionActiva);
             return;
         }
         setIniciado(!iniciado);
@@ -133,27 +145,29 @@ function Map() {
             setNodoInicio(null);
             setNodoFin(null);
             setRadioSeleccion([]);
+            setCargandoNodoInicio(false);
         }
     }
 
     // Añadir nuevo nodo a la propiedad puntosRuta e incrementar temporizador
-    function actualizarPuntosRuta(nodo, nodoReferente, color = "path", multiplicadorTiempo = 1) {
+    // batch=true omite el setState (para llamadas en bucle; llamar setDatosViajes manualmente después)
+    function actualizarPuntosRuta(nodo, nodoReferente, color = "path", multiplicadorTiempo = 1, batch = false) {
         if(!nodo || !nodoReferente) return;
-        
-        // Tiempo fijo por segmento para animación consistente
-        const tiempoBase = 100; // 100ms por segmento base
+
+        const tiempoBase = 100;
         const tiempoAñadido = tiempoBase * multiplicadorTiempo;
 
-        puntosRuta.current = [...puntosRuta.current,
-            { 
-                path: [[nodoReferente.longitud, nodoReferente.latitud], [nodo.longitud, nodo.latitud]],
-                timestamps: [temporizador.current, temporizador.current + tiempoAñadido],
-                color
-            }
-        ];
+        puntosRuta.current.push({
+            path: [[nodoReferente.longitud, nodoReferente.latitud], [nodo.longitud, nodo.latitud]],
+            timestamps: [temporizador.current, temporizador.current + tiempoAñadido],
+            color
+        });
 
         temporizador.current += tiempoAñadido;
-        setDatosViajes(() => puntosRuta.current);
+
+        if (!batch) {
+            setDatosViajes([...puntosRuta.current]);
+        }
     }
 
     function cambiarUbicacion(ubicacion) {
@@ -185,65 +199,89 @@ function Map() {
     }
 
     useEffect(() => {
-        if(!iniciado) return;
-        
+        if(!iniciado && !reproduccionActiva) return;
+
         let animacionId;
-        const velocidad = configuracion?.velocidad || 5;
-        
+        const velocidad = configuracion?.velocidad || 1;
+        // Pasos de algoritmo por segundo a velocidad 1x.
+        // Cada velocidad es un multiplicador exacto: 2x = el doble de pasos/seg que 1x.
+        const BASE_PASOS_POR_SEGUNDO = 5;
+        let acumuladorPasos = 0;
+
         function animar(nuevoTiempo) {
-            // Ejecutar UN SOLO paso del algoritmo por frame para animación consistente
-            if (!estado.current.finished) {
-                const nodosActualizados = estado.current.nextStep();
-                
-                // Añadir todos los nodos actualizados a la ruta
-                for(const nodoActualizado of nodosActualizados) {
-                    actualizarPuntosRuta(nodoActualizado, nodoActualizado.referente);
-                }
-                
-                // Actualizar el tiempo de animación de forma constante
-                // Incremento fijo basado en la velocidad configurada
-                if(nodosActualizados.length > 0) {
-                    setTiempo(temporizador.current);
+            // Delta real entre frames, con tope de 100ms (evita saltos al cambiar de pestaña)
+            const delta = refTiempoAnterior.current != null
+                ? Math.min(nuevoTiempo - refTiempoAnterior.current, 100)
+                : 16;
+
+            // Fase exploración: ejecutar N pasos proporcionales a velocidad y tiempo real
+            if (!estado.current.finished && iniciado && !animacionTerminada) {
+                acumuladorPasos += delta * BASE_PASOS_POR_SEGUNDO * velocidad / 1000;
+                const pasosAEjecutar = Math.floor(acumuladorPasos);
+                acumuladorPasos -= pasosAEjecutar;
+
+                if (pasosAEjecutar > 0) {
+                    let huboActualizacion = false;
+                    for (let i = 0; i < pasosAEjecutar; i++) {
+                        if (estado.current.finished) break;
+                        const nodosActualizados = estado.current.nextStep();
+                        for(const nodoActualizado of nodosActualizados) {
+                            actualizarPuntosRuta(nodoActualizado, nodoActualizado.referente, "path", 1, true);
+                        }
+                        if (nodosActualizados.length > 0) huboActualizacion = true;
+                    }
+                    if (huboActualizacion) {
+                        setDatosViajes([...puntosRuta.current]);
+                        setTiempo(temporizador.current);
+                    }
                 }
             }
 
-            // Trazar camino más corto: un paso por frame
+            // Fase ruta: trazar camino más corto, también escalado por velocidad
             if(estado.current.finished && !animacionTerminada) {
                 if(!nodoTraza.current) nodoTraza.current = estado.current.nodoFin;
-                const nodoPadre = nodoTraza.current.padre;
-                if(nodoPadre !== null) {
-                    actualizarPuntosRuta(nodoPadre, nodoTraza.current, "route", 1);
-                    nodoTraza.current = nodoPadre;
-                    setTiempo(temporizador.current);
-                } else {
-                    setTiempo(temporizador.current);
-                    setAnimacionTerminada(true);
+
+                acumuladorPasos += delta * BASE_PASOS_POR_SEGUNDO * velocidad / 1000;
+                const pasosRuta = Math.floor(acumuladorPasos);
+                acumuladorPasos -= pasosRuta;
+
+                let terminoRuta = false;
+                for (let i = 0; i < pasosRuta; i++) {
+                    const nodoPadre = nodoTraza.current?.padre;
+                    if(nodoPadre !== null && nodoPadre !== undefined) {
+                        actualizarPuntosRuta(nodoPadre, nodoTraza.current, "route", 1, true);
+                        nodoTraza.current = nodoPadre;
+                    } else {
+                        terminoRuta = true;
+                        break;
+                    }
                 }
+
+                if (pasosRuta > 0) {
+                    setDatosViajes([...puntosRuta.current]);
+                    setTiempo(temporizador.current);
+                }
+                if (terminoRuta) setAnimacionTerminada(true);
             }
 
-            // Progreso de reproducción (cuando ya terminó)
+            // Fase reproducción (cuando ya terminó)
             if(refTiempoAnterior.current != null && animacionTerminada && reproduccionActiva) {
                 const deltaTiempo = nuevoTiempo - refTiempoAnterior.current;
                 if(direccionReproduccion !== -1) {
                     setTiempo(t => {
-                        const nuevoTiempo = Math.max(Math.min(t + deltaTiempo * 2 * direccionReproduccion, temporizador.current), 0);
-                        if(nuevoTiempo >= temporizador.current) {
+                        const nuevoT = Math.max(Math.min(t + deltaTiempo * 2 * direccionReproduccion, temporizador.current), 0);
+                        if(nuevoT >= temporizador.current) {
                             setReproduccionActiva(false);
                         }
-                        return nuevoTiempo;
+                        return nuevoT;
                     });
                 }
             }
 
             refTiempoAnterior.current = nuevoTiempo;
-            
-            // Controlar la velocidad de animación con delay
-            const delay = Math.max(16, 1000 / (velocidad * 2)); // Mínimo 16ms (60fps)
-            setTimeout(() => {
-                animacionId = requestAnimationFrame(animar);
-            }, delay);
+            animacionId = requestAnimationFrame(animar);
         }
-        
+
         animacionId = requestAnimationFrame(animar);
         return () => {
             if(animacionId) cancelAnimationFrame(animacionId);
